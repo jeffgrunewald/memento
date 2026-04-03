@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo init:*)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.rs)",
+      "Bash(cargo tree:*)",
+      "Bash(timeout 5 ./target/debug/memento --db-path /tmp/memento-test.db)",
+      "Bash(gtimeout 5 ./target/debug/memento --db-path /tmp/memento-test.db)",
+      "Bash(brew list:*)",
+      "Bash(./target/debug/memento --db-path /tmp/memento-test.db echo \"=== STDERR ===\" cat /tmp/memento-stderr.log)",
+      "Bash(./target/debug/memento --db-path /tmp/memento-test2.db)",
+      "Bash(python3 -c ':*)",
+      "Bash(./target/debug/memento --db-path /tmp/memento-http-test.db --transport http --port 8089)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -X POST http://127.0.0.1:8089/mcp -H 'Content-Type: application/json' -H 'Accept: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"curl-test\",\"version\":\"0.1.0\"}}}' -D /tmp/memento-headers.txt)",
+      "Bash(python3 -m json.tool)",
+      "Bash(kill 20906)",
+      "Bash(rm -f /tmp/memento-test*.db* /tmp/memento-http-test.db* /tmp/memento-stderr.log /tmp/memento-http-stderr.log /tmp/memento-headers.txt)",
+      "Bash(cargo metadata:*)"
+    ]
+  }
+}
