@@ -276,6 +276,7 @@ pub async fn import_files(pool: &SqlitePool, source: Source, workspace: Option<&
         {
             full_content = format!("{desc}\n\n{full_content}");
         }
+        let full_content = crate::util::compact_content(&full_content);
 
         let tags = rmcp::serde_json::to_string(
             &[format!("source:{}", file.source_framework)]

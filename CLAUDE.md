@@ -2,13 +2,93 @@
 
 Rust MCP server providing persistent memory, ephemeral artifacts, an event log, and a knowledge graph for multi-agent coordination. SQLite-backed with FTS5 full-text search.
 
-## Build & Run
+## Build & Install
 
 ```bash
 cargo build --release
 cargo install --path .
-# stdio (default): memento
-# HTTP: memento serve --transport http --port 8080
+```
+
+## Configuration
+
+### MCP server registration
+
+Add memento to your agent's MCP config. For Claude Code, add to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "memento": {
+      "command": "memento",
+      "args": []
+    }
+  }
+}
+```
+
+For HTTP transport, start the server separately and configure the endpoint:
+
+```bash
+memento serve --transport http --port 8080
+```
+
+### Tool permissions
+
+By default, agents will prompt for approval on every MCP tool call. To auto-allow all memento tools, add to your agent's settings. For Claude Code (`~/.claude/settings.json`):
+
+```json
+{
+  "permissions": {
+    "permissions": {
+      "allow": [
+        "mcp__memento__*"
+      ]
+    }
+  }
+}
+```
+
+The wildcard `mcp__memento__*` allows all 17 tools. For finer control, allow specific tools:
+
+```json
+{
+  "permissions": {
+    "permissions": {
+      "allow": [
+        "mcp__memento__get_stats",
+        "mcp__memento__read_memory",
+        "mcp__memento__search_memories",
+        "mcp__memento__list_memories"
+      ]
+    }
+  }
+}
+```
+
+### Importing existing memories
+
+Import memories from other agent frameworks:
+
+```bash
+memento import                          # import from all supported frameworks
+memento import --source claude          # Claude Code only
+memento import --source cursor          # Cursor only
+memento import --source windsurf        # Windsurf only
+memento import --source roo-code        # Roo Code only
+```
+
+### CLI queries
+
+Query the database directly for human-readable output:
+
+```bash
+memento query stats                     # summary counts
+memento query memories                  # list all memories
+memento query memories --project foo    # filter by project
+memento query search "polaris"          # full-text search
+memento query artifacts                 # list artifacts
+memento query events                    # list events
+memento query --json memories           # raw JSON output (for scripting)
 ```
 
 ## Architecture
@@ -117,5 +197,7 @@ src/
   server.rs        — MCP tool definitions (17 tools via rmcp handlers)
   stats.rs         — summary statistics queries
   import.rs        — multi-framework memory importer
+  display.rs       — human-readable CLI output formatting
+  util.rs          — content compaction for token-efficient storage
 migrations/        — SQLite schema (auto-applied)
 ```

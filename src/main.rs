@@ -1,5 +1,6 @@
 mod artifact;
 mod db;
+mod display;
 mod event;
 mod import;
 mod memory;
@@ -7,6 +8,7 @@ mod relationship;
 mod schema;
 mod server;
 mod stats;
+mod util;
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -66,6 +68,9 @@ enum Command {
     },
     /// Query the database directly from the command line
     Query {
+        /// Output raw JSON instead of human-readable format
+        #[arg(long)]
+        json: bool,
         #[command(subcommand)]
         action: QueryAction,
     },
@@ -159,7 +164,7 @@ async fn main() -> Result<()> {
             host,
         } => run_server(pool, transport, &host, port).await?,
         Command::Import { source, workspace } => run_import(pool, source, workspace).await?,
-        Command::Query { action } => run_query(pool, action).await?,
+        Command::Query { json, action } => run_query(pool, action, json).await?,
     }
 
     Ok(())
@@ -264,7 +269,27 @@ async fn run_import(
     Ok(())
 }
 
-async fn run_query(pool: sqlx::SqlitePool, action: QueryAction) -> Result<()> {
+fn print_memory_result(result: &memory::MemoryListResult, json: bool) -> Result<()> {
+    match result {
+        memory::MemoryListResult::Full(page) => {
+            if json {
+                println!("{}", rmcp::serde_json::to_string_pretty(page)?);
+            } else {
+                print!("{}", display::format_memories(page));
+            }
+        }
+        memory::MemoryListResult::Summary(page) => {
+            if json {
+                println!("{}", rmcp::serde_json::to_string_pretty(page)?);
+            } else {
+                print!("{}", display::format_memory_summaries(page));
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn run_query(pool: sqlx::SqlitePool, action: QueryAction, json: bool) -> Result<()> {
     match action {
         QueryAction::Stats => {
             let s = stats::get_stats(&pool).await?;
@@ -284,8 +309,8 @@ async fn run_query(pool: sqlx::SqlitePool, action: QueryAction) -> Result<()> {
                 limit: Some(limit),
                 detail: crate::schema::ContentDetail::Full,
             };
-            let page = memory::list(&pool, &params).await?;
-            println!("{}", rmcp::serde_json::to_string_pretty(&page)?);
+            let result = memory::list(&pool, &params).await?;
+            print_memory_result(&result, json)?;
         }
         QueryAction::Search {
             query,
@@ -302,15 +327,15 @@ async fn run_query(pool: sqlx::SqlitePool, action: QueryAction) -> Result<()> {
                 limit: Some(limit),
                 detail: crate::schema::ContentDetail::Full,
             };
-            let page = memory::search(&pool, &query, &params).await?;
-            println!("{}", rmcp::serde_json::to_string_pretty(&page)?);
+            let result = memory::search(&pool, &query, &params).await?;
+            print_memory_result(&result, json)?;
         }
         QueryAction::Artifacts {
             r#type,
             project,
             limit,
         } => {
-            let page = artifact::list(
+            let result = artifact::list(
                 &pool,
                 r#type.as_deref(),
                 project.as_deref(),
@@ -319,7 +344,22 @@ async fn run_query(pool: sqlx::SqlitePool, action: QueryAction) -> Result<()> {
                 crate::schema::ContentDetail::Full,
             )
             .await?;
-            println!("{}", rmcp::serde_json::to_string_pretty(&page)?);
+            match result {
+                artifact::ArtifactListResult::Full(ref page) => {
+                    if json {
+                        println!("{}", rmcp::serde_json::to_string_pretty(page)?);
+                    } else {
+                        print!("{}", display::format_artifacts(page));
+                    }
+                }
+                artifact::ArtifactListResult::Summary(ref page) => {
+                    if json {
+                        println!("{}", rmcp::serde_json::to_string_pretty(page)?);
+                    } else {
+                        print!("{}", display::format_artifact_summaries(page));
+                    }
+                }
+            }
         }
         QueryAction::Events {
             after,
@@ -335,7 +375,11 @@ async fn run_query(pool: sqlx::SqlitePool, action: QueryAction) -> Result<()> {
                 Some(limit),
             )
             .await?;
-            println!("{}", rmcp::serde_json::to_string_pretty(&page)?);
+            if json {
+                println!("{}", rmcp::serde_json::to_string_pretty(&page)?);
+            } else {
+                print!("{}", display::format_events(&page));
+            }
         }
     }
     Ok(())

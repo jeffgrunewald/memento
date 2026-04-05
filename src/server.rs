@@ -9,6 +9,7 @@ use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::schema::{ContentDetail, MemoryType};
+use crate::util::compact_content;
 use crate::{artifact, event, memory, relationship, stats};
 
 #[derive(Clone)]
@@ -280,10 +281,11 @@ impl MementoServer {
             Ok(t) => t,
             Err(e) => return e,
         };
+        let content = compact_content(&input.content);
         match memory::write(
             &self.pool,
             &input.key,
-            &input.content,
+            &content,
             memory_type,
             input.project.as_deref(),
             tags,
@@ -324,10 +326,11 @@ impl MementoServer {
                 Ok(t) => t,
                 Err(e) => return e,
             };
+            let content = compact_content(&item.content);
             match memory::write(
                 &self.pool,
                 &item.key,
-                &item.content,
+                &content,
                 memory_type,
                 item.project.as_deref(),
                 tags,
@@ -424,10 +427,11 @@ impl MementoServer {
             }
             None => None,
         };
+        let content = compact_content(&input.content);
         match artifact::write(
             &self.pool,
             &input.key,
-            &input.content,
+            &content,
             &input.artifact_type,
             input.project.as_deref(),
             input.source_agent.as_deref(),
@@ -462,10 +466,11 @@ impl MementoServer {
                 },
                 None => None,
             };
+            let content = compact_content(&item.content);
             match artifact::write(
                 &self.pool,
                 &item.key,
-                &item.content,
+                &content,
                 &item.artifact_type,
                 item.project.as_deref(),
                 item.source_agent.as_deref(),
