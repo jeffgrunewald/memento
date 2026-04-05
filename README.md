@@ -192,9 +192,34 @@ The entire database is a single SQLite file at `~/.config/claude-memory/memory.d
 
 ## Configuring Claude Code
 
-Add memento to your Claude Code settings file at `~/.claude/settings.json`:
+MCP servers are registered in `~/.claude.json` (not `~/.claude/settings.json`). The easiest way to configure this is with the `claude mcp add` CLI command.
 
 ### stdio transport
+
+```
+claude mcp add memento -- memento
+```
+
+With a custom database path:
+
+```
+claude mcp add memento -- memento --db-path /path/to/memory.db
+```
+
+### HTTP transport
+
+Start the server separately, then register the endpoint:
+
+```
+memento serve --transport http --port 8080
+claude mcp add --transport http memento http://localhost:8080/mcp
+```
+
+The HTTP transport supports multiple concurrent Claude Code sessions sharing the same memory store.
+
+### Manual configuration
+
+If you prefer to edit the config file directly, add to `~/.claude.json`:
 
 ```json
 {
@@ -207,34 +232,21 @@ Add memento to your Claude Code settings file at `~/.claude/settings.json`:
 }
 ```
 
-With a custom database path:
+### Tool permissions
+
+To auto-allow all memento tools without per-call approval prompts, add to `~/.claude/settings.json`:
 
 ```json
 {
-  "mcpServers": {
-    "memento": {
-      "command": "memento",
-      "args": ["--db-path", "/path/to/memory.db"]
+  "permissions": {
+    "permissions": {
+      "allow": [
+        "mcp__memento__*"
+      ]
     }
   }
 }
 ```
-
-### HTTP transport
-
-Start the server separately, then point Claude Code at it:
-
-```json
-{
-  "mcpServers": {
-    "memento": {
-      "url": "http://localhost:8080/mcp"
-    }
-  }
-}
-```
-
-The HTTP transport supports multiple concurrent Claude Code sessions sharing the same memory store.
 
 ### Directing agents to use memento
 
