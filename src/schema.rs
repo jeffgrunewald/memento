@@ -3,6 +3,20 @@ use sqlx::FromRow;
 use time::OffsetDateTime;
 
 pub const DEFAULT_PAGE_SIZE: i64 = 20;
+pub const MAX_PAGE_SIZE: i64 = 100;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum ContentDetail {
+    #[default]
+    Summary,
+    Full,
+}
+
+impl ContentDetail {
+    pub fn is_summary(self) -> bool {
+        self == Self::Summary
+    }
+}
 
 pub trait Paginate {
     fn cursor_value(&self) -> String;
@@ -80,13 +94,46 @@ pub struct MemoryRow {
     pub memory_type: String,
     pub project: Option<String>,
     pub tags: String, // JSON array
+    pub version: i64,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
     pub updated_at: OffsetDateTime,
 }
 
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct MemoryVersionRow {
+    pub version_id: i64,
+    pub key: String,
+    pub version: i64,
+    pub content: String,
+    pub memory_type: String,
+    pub project: Option<String>,
+    pub tags: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub superseded_at: String,
+}
+
 impl Paginate for MemoryRow {
+    fn cursor_value(&self) -> String {
+        format_ts_key_cursor(&self.updated_at, &self.key)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct MemorySummaryRow {
+    pub key: String,
+    pub content_preview: String,
+    pub memory_type: String,
+    pub project: Option<String>,
+    pub tags: String,
+    pub version: i64,
+    #[serde(with = "time::serde::rfc3339")]
+    pub updated_at: OffsetDateTime,
+}
+
+impl Paginate for MemorySummaryRow {
     fn cursor_value(&self) -> String {
         format_ts_key_cursor(&self.updated_at, &self.key)
     }
@@ -108,6 +155,23 @@ pub struct ArtifactRow {
 }
 
 impl Paginate for ArtifactRow {
+    fn cursor_value(&self) -> String {
+        format_ts_key_cursor(&self.created_at, &self.key)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct ArtifactSummaryRow {
+    pub key: String,
+    pub content_preview: String,
+    pub artifact_type: String,
+    pub project: Option<String>,
+    pub source_agent: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+}
+
+impl Paginate for ArtifactSummaryRow {
     fn cursor_value(&self) -> String {
         format_ts_key_cursor(&self.created_at, &self.key)
     }

@@ -1,7 +1,9 @@
 mod artifact;
 mod db;
 mod event;
+mod import;
 mod memory;
+mod relationship;
 mod schema;
 mod server;
 mod stats;
@@ -10,7 +12,7 @@ use std::future::Future;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use rmcp::ServiceExt;
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
@@ -19,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+use crate::schema::MemoryType;
 use crate::server::MementoServer;
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -28,26 +31,109 @@ enum Transport {
 }
 
 #[derive(Parser)]
-#[command(
-    name = "memento",
-    about = "MCP memory server for multi-agent coordination"
-)]
+#[command(name = "memento", about = "MCP memory server for multi-agent coordination")]
 struct Cli {
     /// Path to the SQLite database file
-    #[arg(long, env = "MEMENTO_DB_PATH")]
+    #[arg(long, global = true, env = "MEMENTO_DB_PATH")]
     db_path: Option<PathBuf>,
 
-    /// Transport protocol to use
-    #[arg(long, default_value = "stdio")]
-    transport: Transport,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
 
-    /// Port for HTTP transport
-    #[arg(long, default_value = "8080")]
-    port: u16,
+#[derive(Subcommand)]
+enum Command {
+    /// Start the MCP server (default if no subcommand given)
+    Serve {
+        /// Transport protocol to use
+        #[arg(long, default_value = "stdio")]
+        transport: Transport,
+        /// Port for HTTP transport
+        #[arg(long, default_value = "8080")]
+        port: u16,
+        /// Bind address for HTTP transport
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+    },
+    /// Import memories from agent framework memory/rules files
+    Import {
+        /// Framework to import from (default: all)
+        #[arg(long, default_value = "all")]
+        source: import::Source,
+        /// Workspace root to scan for project-level files
+        #[arg(long)]
+        workspace: Option<PathBuf>,
+    },
+    /// Query the database directly from the command line
+    Query {
+        #[command(subcommand)]
+        action: QueryAction,
+    },
+}
 
-    /// Bind address for HTTP transport
-    #[arg(long, default_value = "127.0.0.1")]
-    host: String,
+#[derive(Subcommand)]
+enum QueryAction {
+    /// Show summary statistics
+    Stats,
+    /// List memories with optional filters
+    Memories {
+        /// Filter by memory type
+        #[arg(long)]
+        r#type: Option<String>,
+        /// Filter by project
+        #[arg(long)]
+        project: Option<String>,
+        /// Filter by tag
+        #[arg(long)]
+        tag: Option<String>,
+        /// Maximum results
+        #[arg(long, default_value = "20")]
+        limit: i64,
+    },
+    /// Search memories by text
+    Search {
+        /// Search query
+        query: String,
+        /// Filter by memory type
+        #[arg(long)]
+        r#type: Option<String>,
+        /// Filter by project
+        #[arg(long)]
+        project: Option<String>,
+        /// Filter by tag
+        #[arg(long)]
+        tag: Option<String>,
+        /// Maximum results
+        #[arg(long, default_value = "20")]
+        limit: i64,
+    },
+    /// List artifacts
+    Artifacts {
+        /// Filter by artifact type
+        #[arg(long)]
+        r#type: Option<String>,
+        /// Filter by project
+        #[arg(long)]
+        project: Option<String>,
+        /// Maximum results
+        #[arg(long, default_value = "20")]
+        limit: i64,
+    },
+    /// List recent events
+    Events {
+        /// Show events after this ID
+        #[arg(long)]
+        after: Option<i64>,
+        /// Filter by event type
+        #[arg(long)]
+        r#type: Option<String>,
+        /// Filter by project
+        #[arg(long)]
+        project: Option<String>,
+        /// Maximum results
+        #[arg(long, default_value = "20")]
+        limit: i64,
+    },
 }
 
 #[tokio::main]
@@ -62,9 +148,32 @@ async fn main() -> Result<()> {
     let db_path = cli.db_path.unwrap_or_else(db::default_db_path);
     let pool = db::connect(&db_path).await?;
 
+    match cli.command.unwrap_or(Command::Serve {
+        transport: Transport::Stdio,
+        port: 8080,
+        host: "127.0.0.1".to_string(),
+    }) {
+        Command::Serve {
+            transport,
+            port,
+            host,
+        } => run_server(pool, transport, &host, port).await?,
+        Command::Import { source, workspace } => run_import(pool, source, workspace).await?,
+        Command::Query { action } => run_query(pool, action).await?,
+    }
+
+    Ok(())
+}
+
+async fn run_server(
+    pool: sqlx::SqlitePool,
+    transport: Transport,
+    host: &str,
+    port: u16,
+) -> Result<()> {
     let (shutdown_token, shutdown_fut) = shutdown_signal();
 
-    match cli.transport {
+    match transport {
         Transport::Stdio => {
             info!("starting stdio transport");
             let service = MementoServer::new(pool)
@@ -77,7 +186,7 @@ async fn main() -> Result<()> {
             }
         }
         Transport::Http => {
-            let bind_addr = format!("{}:{}", cli.host, cli.port);
+            let bind_addr = format!("{host}:{port}");
             info!(addr = %bind_addr, "starting HTTP transport");
 
             let config = StreamableHttpServerConfig::default()
@@ -102,10 +211,136 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Returns a cancellation token and a future that resolves on SIGINT or SIGTERM.
-///
-/// The token is cancelled when either signal fires, cascading shutdown to all
-/// listeners that hold a clone or child token.
+async fn run_import(
+    pool: sqlx::SqlitePool,
+    source: import::Source,
+    workspace: Option<PathBuf>,
+) -> Result<()> {
+    let report = import::import_files(&pool, source, workspace.as_deref()).await?;
+
+    if report.imported.is_empty() && report.skipped.is_empty() && report.errors.is_empty() {
+        println!("No memory files found.");
+        return Ok(());
+    }
+
+    if !report.imported.is_empty() {
+        println!("Imported {} memories:", report.imported.len());
+        for item in &report.imported {
+            println!(
+                "  + {} ({}{})",
+                item.key,
+                item.memory_type,
+                item.project
+                    .as_ref()
+                    .map_or(String::new(), |p| format!(", project={p}"))
+            );
+        }
+        println!();
+    }
+
+    if !report.skipped.is_empty() {
+        println!("Skipped {} (already exist):", report.skipped.len());
+        for item in &report.skipped {
+            println!("  - {} ({})", item.key, item.source);
+        }
+        println!();
+    }
+
+    if !report.errors.is_empty() {
+        println!("Errors ({}):", report.errors.len());
+        for item in &report.errors {
+            println!("  ! {}: {}", item.source, item.error);
+        }
+        println!();
+    }
+
+    println!(
+        "Done: {} imported, {} skipped, {} errors",
+        report.imported.len(),
+        report.skipped.len(),
+        report.errors.len()
+    );
+
+    Ok(())
+}
+
+async fn run_query(pool: sqlx::SqlitePool, action: QueryAction) -> Result<()> {
+    match action {
+        QueryAction::Stats => {
+            let s = stats::get_stats(&pool).await?;
+            println!("{}", rmcp::serde_json::to_string_pretty(&s)?);
+        }
+        QueryAction::Memories {
+            r#type,
+            project,
+            tag,
+            limit,
+        } => {
+            let params = memory::ListParams {
+                memory_type: r#type.as_deref().and_then(MemoryType::parse),
+                project: project.as_deref(),
+                tag: tag.as_deref(),
+                cursor: None,
+                limit: Some(limit),
+                detail: crate::schema::ContentDetail::Full,
+            };
+            let page = memory::list(&pool, &params).await?;
+            println!("{}", rmcp::serde_json::to_string_pretty(&page)?);
+        }
+        QueryAction::Search {
+            query,
+            r#type,
+            project,
+            tag,
+            limit,
+        } => {
+            let params = memory::ListParams {
+                memory_type: r#type.as_deref().and_then(MemoryType::parse),
+                project: project.as_deref(),
+                tag: tag.as_deref(),
+                cursor: None,
+                limit: Some(limit),
+                detail: crate::schema::ContentDetail::Full,
+            };
+            let page = memory::search(&pool, &query, &params).await?;
+            println!("{}", rmcp::serde_json::to_string_pretty(&page)?);
+        }
+        QueryAction::Artifacts {
+            r#type,
+            project,
+            limit,
+        } => {
+            let page = artifact::list(
+                &pool,
+                r#type.as_deref(),
+                project.as_deref(),
+                None,
+                Some(limit),
+                crate::schema::ContentDetail::Full,
+            )
+            .await?;
+            println!("{}", rmcp::serde_json::to_string_pretty(&page)?);
+        }
+        QueryAction::Events {
+            after,
+            r#type,
+            project,
+            limit,
+        } => {
+            let page = event::read_since(
+                &pool,
+                after,
+                r#type.as_deref(),
+                project.as_deref(),
+                Some(limit),
+            )
+            .await?;
+            println!("{}", rmcp::serde_json::to_string_pretty(&page)?);
+        }
+    }
+    Ok(())
+}
+
 fn shutdown_signal() -> (CancellationToken, impl Future<Output = ()>) {
     let token = CancellationToken::new();
     let cancel = token.clone();
