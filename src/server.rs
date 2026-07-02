@@ -245,7 +245,11 @@ fn detail_level(full: Option<bool>) -> ContentDetail {
 }
 
 fn clamp_limit(limit: Option<i64>) -> Option<i64> {
-    Some(limit.unwrap_or(crate::schema::DEFAULT_PAGE_SIZE).clamp(1, crate::schema::MAX_PAGE_SIZE))
+    Some(
+        limit
+            .unwrap_or(crate::schema::DEFAULT_PAGE_SIZE)
+            .clamp(1, crate::schema::MAX_PAGE_SIZE),
+    )
 }
 
 fn validate_tags(tags: Option<&str>) -> Result<&str, Result<CallToolResult, ErrorData>> {
@@ -298,7 +302,9 @@ impl MementoServer {
         }
     }
 
-    #[tool(description = "Get the version history of a memory. Returns previous versions in reverse chronological order.")]
+    #[tool(
+        description = "Get the version history of a memory. Returns previous versions in reverse chronological order."
+    )]
     async fn get_history(
         &self,
         Parameters(input): Parameters<GetHistoryInput>,
@@ -309,7 +315,9 @@ impl MementoServer {
         }
     }
 
-    #[tool(description = "Write multiple memories in a single call. Returns per-item results — each item independently succeeds or returns a version conflict. Retry conflicting items after incrementing their version.")]
+    #[tool(
+        description = "Write multiple memories in a single call. Returns per-item results — each item independently succeeds or returns a version conflict. Retry conflicting items after incrementing their version."
+    )]
     async fn write_memories(
         &self,
         Parameters(input): Parameters<WriteMemoriesBatchInput>,
@@ -444,7 +452,9 @@ impl MementoServer {
         }
     }
 
-    #[tool(description = "Write multiple artifacts in a single call. Each entry follows the same schema as write_artifact.")]
+    #[tool(
+        description = "Write multiple artifacts in a single call. Each entry follows the same schema as write_artifact."
+    )]
     async fn write_artifacts(
         &self,
         Parameters(input): Parameters<WriteArtifactsBatchInput>,
@@ -458,10 +468,7 @@ impl MementoServer {
                 ) {
                     Ok(dt) => Some(dt),
                     Err(e) => {
-                        return tool_error(format!(
-                            "invalid expires_at on key '{}': {e}",
-                            item.key
-                        ))
+                        return tool_error(format!("invalid expires_at on key '{}': {e}", item.key));
                     }
                 },
                 None => None,
@@ -572,16 +579,24 @@ impl MementoServer {
         }
     }
 
-    #[tool(description = "Create a directed relationship between two entities (memories or artifacts). Supports relationship types like relates_to, depends_on, supersedes, derived_from.")]
+    #[tool(
+        description = "Create a directed relationship between two entities (memories or artifacts). Supports relationship types like relates_to, depends_on, supersedes, derived_from."
+    )]
     async fn link(
         &self,
         Parameters(input): Parameters<LinkInput>,
     ) -> Result<CallToolResult, ErrorData> {
         if !is_valid_entity_type(&input.source_type) {
-            return tool_error(format!("invalid source_type '{}': must be memory or artifact", input.source_type));
+            return tool_error(format!(
+                "invalid source_type '{}': must be memory or artifact",
+                input.source_type
+            ));
         }
         if !is_valid_entity_type(&input.target_type) {
-            return tool_error(format!("invalid target_type '{}': must be memory or artifact", input.target_type));
+            return tool_error(format!(
+                "invalid target_type '{}': must be memory or artifact",
+                input.target_type
+            ));
         }
         match relationship::link(
             &self.pool,
@@ -598,7 +613,9 @@ impl MementoServer {
         }
     }
 
-    #[tool(description = "Remove a relationship between two entities. Omit relation to remove all relationships between the pair.")]
+    #[tool(
+        description = "Remove a relationship between two entities. Omit relation to remove all relationships between the pair."
+    )]
     async fn unlink(
         &self,
         Parameters(input): Parameters<UnlinkInput>,
@@ -618,13 +635,18 @@ impl MementoServer {
         }
     }
 
-    #[tool(description = "Get all relationships for an entity, both outgoing (this entity as source) and incoming (this entity as target). Optionally filter by relationship type.")]
+    #[tool(
+        description = "Get all relationships for an entity, both outgoing (this entity as source) and incoming (this entity as target). Optionally filter by relationship type."
+    )]
     async fn get_related(
         &self,
         Parameters(input): Parameters<GetRelatedInput>,
     ) -> Result<CallToolResult, ErrorData> {
         if !is_valid_entity_type(&input.entity_type) {
-            return tool_error(format!("invalid entity_type '{}': must be memory or artifact", input.entity_type));
+            return tool_error(format!(
+                "invalid entity_type '{}': must be memory or artifact",
+                input.entity_type
+            ));
         }
         match relationship::get_related(
             &self.pool,

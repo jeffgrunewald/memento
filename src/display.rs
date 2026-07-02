@@ -7,10 +7,11 @@ use crate::schema::{
 const SEPARATOR: &str = "───────────────────────────────────────────────────";
 
 fn write_pagination_footer(buf: &mut String, has_more: bool, next_cursor: &Option<String>) {
-    if has_more
-        && let Some(cursor) = next_cursor
-    {
-        let _ = write!(buf, "\n{SEPARATOR}\nMore results available. Cursor: {cursor}");
+    if has_more && let Some(cursor) = next_cursor {
+        let _ = write!(
+            buf,
+            "\n{SEPARATOR}\nMore results available. Cursor: {cursor}"
+        );
     }
 }
 

@@ -14,6 +14,9 @@ use std::future::Future;
 use std::path::PathBuf;
 
 use anyhow::Result;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::routing::get;
 use clap::{Parser, Subcommand, ValueEnum};
 use rmcp::ServiceExt;
 use rmcp::transport::streamable_http_server::{
@@ -33,7 +36,10 @@ enum Transport {
 }
 
 #[derive(Parser)]
-#[command(name = "memento", about = "MCP memory server for multi-agent coordination")]
+#[command(
+    name = "memento",
+    about = "MCP memory server for multi-agent coordination"
+)]
 struct Cli {
     /// Path to the SQLite database file
     #[arg(long, global = true, env = "MEMENTO_DB_PATH")]
@@ -197,13 +203,18 @@ async fn run_server(
             let config = StreamableHttpServerConfig::default()
                 .with_cancellation_token(shutdown_token.child_token());
 
+            let health_pool = pool.clone();
+
             let service = StreamableHttpService::new(
                 move || Ok(MementoServer::new(pool.clone())),
                 LocalSessionManager::default().into(),
                 config,
             );
 
-            let router = axum::Router::new().nest_service("/mcp", service);
+            let router = axum::Router::new()
+                .route("/health", get(health_check))
+                .nest_service("/mcp", service)
+                .with_state(health_pool);
             let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
 
             axum::serve(listener, router)
@@ -214,6 +225,17 @@ async fn run_server(
 
     info!("memento shutdown complete");
     Ok(())
+}
+
+/// Liveness probe: confirms the process can reach and query the SQLite pool.
+async fn health_check(State(pool): State<sqlx::SqlitePool>) -> StatusCode {
+    match sqlx::query("SELECT 1").fetch_one(&pool).await {
+        Ok(_) => StatusCode::OK,
+        Err(e) => {
+            tracing::warn!(error = %e, "health check failed");
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+    }
 }
 
 async fn run_import(

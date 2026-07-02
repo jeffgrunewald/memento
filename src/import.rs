@@ -239,7 +239,11 @@ fn collect_file(
 
 // -- Import engine --
 
-pub async fn import_files(pool: &SqlitePool, source: Source, workspace: Option<&Path>) -> Result<ImportReport> {
+pub async fn import_files(
+    pool: &SqlitePool,
+    source: Source,
+    workspace: Option<&Path>,
+) -> Result<ImportReport> {
     let discovered = discover(source, workspace);
     let mut report = ImportReport {
         imported: vec![],
@@ -263,7 +267,12 @@ pub async fn import_files(pool: &SqlitePool, source: Source, workspace: Option<&
 
         let parsed = parse_file(&content);
 
-        let key = build_key(&file.path, &parsed, file.project.as_deref(), file.source_framework);
+        let key = build_key(
+            &file.path,
+            &parsed,
+            file.project.as_deref(),
+            file.source_framework,
+        );
         let memory_type = parsed
             .memory_type
             .as_deref()
@@ -278,9 +287,8 @@ pub async fn import_files(pool: &SqlitePool, source: Source, workspace: Option<&
         }
         let full_content = crate::util::compact_content(&full_content);
 
-        let tags = rmcp::serde_json::to_string(
-            &[format!("source:{}", file.source_framework)]
-        ).unwrap_or_else(|_| "[]".to_string());
+        let tags = rmcp::serde_json::to_string(&[format!("source:{}", file.source_framework)])
+            .unwrap_or_else(|_| "[]".to_string());
 
         match memory::write(
             pool,
@@ -404,7 +412,13 @@ fn build_key(path: &Path, parsed: &ParsedFile, project: Option<&str>, framework:
 fn slugify(s: &str) -> String {
     s.to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_string()
@@ -427,8 +441,7 @@ mod tests {
 
     #[test]
     fn parse_with_frontmatter() {
-        let content =
-            "---\nname: Test Memory\ndescription: A test\ntype: feedback\n---\n\nBody content here.";
+        let content = "---\nname: Test Memory\ndescription: A test\ntype: feedback\n---\n\nBody content here.";
         let parsed = parse_file(content);
         assert_eq!(parsed.name.as_deref(), Some("Test Memory"));
         assert_eq!(parsed.description.as_deref(), Some("A test"));
@@ -438,8 +451,7 @@ mod tests {
 
     #[test]
     fn parse_with_quoted_frontmatter() {
-        let content =
-            "---\ndescription: \"Coding standards for React\"\nglobs: \"src/**/*.tsx\"\nalwaysApply: false\n---\n\nUse functional components.";
+        let content = "---\ndescription: \"Coding standards for React\"\nglobs: \"src/**/*.tsx\"\nalwaysApply: false\n---\n\nUse functional components.";
         let parsed = parse_file(content);
         assert_eq!(
             parsed.description.as_deref(),

@@ -120,7 +120,10 @@ async fn cleanup_expired(pool: &SqlitePool) -> Result<()> {
     .context("failed to cleanup expired artifacts")?;
 
     if result.rows_affected() > 0 {
-        tracing::debug!(count = result.rows_affected(), "cleaned up expired artifacts");
+        tracing::debug!(
+            count = result.rows_affected(),
+            "cleaned up expired artifacts"
+        );
     }
     Ok(())
 }

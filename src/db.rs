@@ -27,6 +27,20 @@ pub async fn connect(db_path: &std::path::Path) -> Result<SqlitePool> {
         .await
         .context("failed to connect to SQLite")?;
 
+    let integrity: Vec<(String,)> = sqlx::query_as("PRAGMA quick_check")
+        .fetch_all(&pool)
+        .await
+        .context("failed to run database integrity check")?;
+
+    if integrity.iter().any(|(msg,)| msg != "ok") {
+        let details = integrity
+            .into_iter()
+            .map(|(m,)| m)
+            .collect::<Vec<_>>()
+            .join("; ");
+        anyhow::bail!("database integrity check failed: {details}");
+    }
+
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
